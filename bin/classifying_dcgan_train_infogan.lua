@@ -67,7 +67,7 @@ torch.setnumthreads(1)
 torch.setdefaulttensortype('torch.FloatTensor')
 
 -- create data loader
-local DataLoader = paths.dofile('../data/data.lua')
+local DataLoader = paths.dofile('../dataset/data.lua')
 local data = DataLoader.new(opts.nThreads, opts.dataset, opts)
 print("Dataset: " .. opts.dataset, " Size: ", data:size())
 
