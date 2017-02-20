@@ -77,12 +77,18 @@ function model_builder.build_infogan(n_gen_inputs, n_salient_params,opt)
 --    :add(FullConv(64, 1, 4,4, 2,2, 1,1))
 --    :add(nn.Sigmoid())
 --    -- 1 x 28 x 28
+    local SpatialBatchNormalization = nn.SpatialBatchNormalization
+    local SpatialConvolution = nn.SpatialConvolution
+    local SpatialFullConvolution = nn.SpatialFullConvolution
+
+
     local nc=3
     local nz=n_gen_inputs
     local ndf=opt.ndf
     local ngf=opt.ngf
     local ngen=opt.ngen
     local netG = nn.Sequential()
+    netG:add(nn.Reshape(nz,1,1))
     -- input is Z, going into a convolution
     netG:add(SpatialFullConvolution(nz, ngf * 8, 4, 4))
     netG:add(SpatialBatchNormalization(ngf * 8)):add(nn.ReLU(true))

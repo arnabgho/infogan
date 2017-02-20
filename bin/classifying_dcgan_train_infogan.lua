@@ -47,6 +47,7 @@ Trains an InfoGAN network
   --fineSize (default 64) The final crop size
   --nThreads (default 4) The number of dataloading threads to use
   --dataset (default 'folder') The type of dataset to use
+  --DATA_ROOT (default 'celebA') The dataset to be used
 ]]
 
 local n_epochs = opts.epochs
@@ -60,9 +61,9 @@ local n_gen_inputs = opts.gen_inputs
 local n_salient_vars = 10 + opts.uniform_salient_vars
 local ngen = opts.ngen
 local n_noise_vars = n_gen_inputs - n_salient_vars
-opt.manualSeed = torch.random(1, 10000) -- fix seed
-print("Random Seed: " .. opt.manualSeed)
-torch.manualSeed(opt.manualSeed)
+opts.manualSeed = torch.random(1, 10000) -- fix seed
+print("Random Seed: " .. opts.manualSeed)
+torch.manualSeed(opts.manualSeed)
 torch.setnumthreads(1)
 torch.setdefaulttensortype('torch.FloatTensor')
 
@@ -148,7 +149,7 @@ local log = tnt.Log{
 }
 
 --- TRAIN ---
-local gen_inputs=torch.CudaTensor(ngen,batch_size,n_gen_inputs)
+local gen_inputs=torch.CudaTensor(ngen,opts.batchSize,n_gen_inputs)
 local real_input = torch.CudaTensor()
 local gen_input = torch.CudaTensor()
 local fake_input = torch.CudaTensor()
@@ -303,7 +304,7 @@ end
 local constant_noise = torch.CudaTensor(5, n_gen_inputs)
 dist:sample(constant_noise:narrow(2, 1, n_salient_vars), dist.prior_params)
 
-local iter_inst = train_iter()
+--local iter_inst = train_iter()
 
 -- Training loop
 for epoch = 1, n_epochs do
@@ -315,13 +316,13 @@ for epoch = 1, n_epochs do
 
   -- Do training iterations for the epoch
   for iteration = 1, n_updates_per_epoch do
-    local sample = iter_inst()
+    --local sample = iter_inst()
 
-    if not sample or sample.input:size(1) < batch_size then
+    --if not sample or sample.input:size(1) < batch_size then
       -- Restart iterator
-      iter_inst = train_iter()
-      sample = iter_inst()
-    end
+    --  iter_inst = train_iter()
+    --  sample = iter_inst()
+    --end
 
     -- Copy real inputs from the dataset onto the GPU
     --input = sample.input:narrow(3, 3, 28):narrow(4, 3, 28)
