@@ -20,6 +20,8 @@ local pl = require('pl.import_into')()
 
 package.path = package.path .. ';./src/?.lua;./src/?/init.lua'
 
+util = paths.dofile('../util/util.lua')
+local model_utils = require 'util.model_utils'
 local pdist = require('pdist')
 local MnistDataset = require('MnistDataset')
 local model_builder = require('classifying_model_builder')
@@ -79,9 +81,11 @@ local dist = pdist.Hybrid()
     stddev = torch.CudaTensor(n_salient_vars - 10):fill(1),
     fixed_stddev = true
   })
-
+local discriminator_body=nil
+local discriminator_head=nil
+local info_head=nil
 G={}
-local G.generator1, discriminator_body, discriminator_head, info_head =
+G['generator1'],discriminator_body,discriminator_head,info_head =
   model_builder.build_infogan(n_gen_inputs, dist:n_params(),ngen)
 
 local discriminator = nn.Sequential()
@@ -127,7 +131,7 @@ local log = tnt.Log{
 }
 
 --- TRAIN ---
-local gen_inputs=torch.Tensor(ngen,batch_size,n_gen_inputs)
+local gen_inputs=torch.CudaTensor(ngen,batch_size,n_gen_inputs)
 local real_input = torch.CudaTensor()
 local gen_input = torch.CudaTensor()
 local fake_input = torch.CudaTensor()
@@ -213,7 +217,7 @@ local do_generator_step = function(new_params)
   if new_params ~= gen_params then
     gen_params:copy(new_params)
   end
-
+  local gen_loss=0
   gen_grad_params:zero()
   for i=1,ngen do   
      fake_input:resizeAs(G['generator'..i].output):copy(G['generator'..i].output)
@@ -224,7 +228,7 @@ local do_generator_step = function(new_params)
      disc_target:fill(real_label)
      local dheadout = discriminator_head.output
      local dbodyout = discriminator_body.output
-     local gen_loss = gen_loss+disc_head_criterion:forward(dheadout, disc_target)
+     gen_loss = gen_loss+disc_head_criterion:forward(dheadout, disc_target)
      local dloss_ddheadout = disc_head_criterion:backward(dheadout, disc_target)
      local dloss_ddheadin = discriminator_head:updateGradInput(dbodyout, dloss_ddheadout)
    
@@ -367,8 +371,9 @@ for epoch = 1, n_epochs do
     pl.path.join(image_dir, string.format('varying_%04dc2_%04d.png',i, epoch)),
     images_varying_c2)
   end
-  G['generator'..i]:training()
-
+  for i=1,ngen do
+    G['generator'..i]:training()
+  end
   -- Update log
   log:set{
     epoch = epoch,
