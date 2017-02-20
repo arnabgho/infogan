@@ -22,7 +22,7 @@ package.path = package.path .. ';./src/?.lua;./src/?/init.lua'
 
 local pdist = require('pdist')
 local MnistDataset = require('MnistDataset')
-local model_builder = require('model_builder')
+local model_builder = require('classifying_model_builder')
 unpack=unpack or table.unpack
 --- OPTIONS ---
 
@@ -37,6 +37,7 @@ Trains an InfoGAN network
   --rng-seed (default 1234) Seed for random number generation
   --gen-inputs (default 74) Number of inputs to the generator network
   --uniform-salient-vars (default 2) Number of non-categorical salient inputs
+  --ngen (default 3) Number of generators to use
 ]]
 
 local n_epochs = opts.epochs
@@ -48,7 +49,7 @@ local gen_learning_rate = opts.gen_learning_rate
 local rng_seed = opts.rng_seed
 local n_gen_inputs = opts.gen_inputs
 local n_salient_vars = 10 + opts.uniform_salient_vars
-
+local ngen = opts.ngen
 local n_noise_vars = n_gen_inputs - n_salient_vars
 
 assert(n_salient_vars >= 10 and n_salient_vars < n_gen_inputs,
@@ -79,8 +80,9 @@ local dist = pdist.Hybrid()
     fixed_stddev = true
   })
 
-local generator, discriminator_body, discriminator_head, info_head =
-  model_builder.build_infogan(n_gen_inputs, dist:n_params())
+G={}
+local G.generator1, discriminator_body, discriminator_head, info_head =
+  model_builder.build_infogan(n_gen_inputs, dist:n_params(),ngen)
 
 local discriminator = nn.Sequential()
   :add(discriminator_body)
@@ -89,12 +91,18 @@ local discriminator = nn.Sequential()
     :add(info_head)
   )
 
-generator:cuda()
+for i=2,ngen do
+    G['generator'..i]=G.generator1:clone()
+end
+
+--generator:cuda()
+for k,net in pairs(G) do net:cuda() end
 discriminator:cuda()
 
 --- CRITERIA ---
 
-local disc_head_criterion = nn.BCECriterion()
+--local disc_head_criterion = nn.BCECriterion()
+local disc_head_criterion = nn.CrossEntropyCriterion()
 local info_head_criterion = pdist.MutualInformationCriterion(dist)
 
 disc_head_criterion:cuda()
@@ -119,7 +127,7 @@ local log = tnt.Log{
 }
 
 --- TRAIN ---
-
+local gen_inputs=torch.Tensor(ngen,batch_size,n_gen_inputs)
 local real_input = torch.CudaTensor()
 local gen_input = torch.CudaTensor()
 local fake_input = torch.CudaTensor()
@@ -127,7 +135,7 @@ local disc_target = torch.CudaTensor()
 
 -- Flatten network parameters
 local disc_params, disc_grad_params = discriminator:getParameters()
-local gen_params, gen_grad_params = generator:getParameters()
+local gen_params, gen_grad_params = model_utils.combine_all_parameters(G)
 
 -- Meters for gathering statistics to log
 local fake_loss_meter = tnt.AverageValueMeter()
@@ -136,6 +144,8 @@ local real_loss_meter = tnt.AverageValueMeter()
 local gen_loss_meter = tnt.AverageValueMeter()
 local time_meter = tnt.TimeMeter()
 
+local real_label=ngen+1
+local fake_labels = torch.linspace(1,ngen,ngen)
 -- Calculate outputs and gradients for the discriminator
 local do_discriminator_step = function(new_params)
   if new_params ~= disc_params then
@@ -156,35 +166,37 @@ local do_discriminator_step = function(new_params)
   local dbodyout = discriminator_body:forward(real_input)
 
   local dheadout = discriminator_head:forward(dbodyout)
-  disc_target:fill(1)
+  disc_target:fill(real_label)
   loss_real = disc_head_criterion:forward(dheadout, disc_target)
   local dloss_ddheadout = disc_head_criterion:backward(dheadout, disc_target)
   local dloss_ddheadin = discriminator_head:backward(dbodyout, dloss_ddheadout)
   discriminator_body:backward(real_input, dloss_ddheadin)
 
   -- Train with fake images (from generator)
-  dist:sample(gen_input:narrow(2, 1, n_salient_vars), dist.prior_params)
-  gen_input:narrow(2, n_salient_vars + 1, n_noise_vars):normal(0, 1)
-  generator:forward(gen_input)
-  fake_input:resizeAs(generator.output):copy(generator.output)
-  local dbodyout = discriminator_body:forward(fake_input)
+  for i=1,ngen do
+     dist:sample(gen_input:narrow(2, 1, n_salient_vars), dist.prior_params)
+     gen_input:narrow(2, n_salient_vars + 1, n_noise_vars):normal(0, 1)
+     G['generator'..i]:forward(gen_input)
+     gen_inputs[i]=gen_input
+     fake_input:resizeAs(G['generator'..i].output):copy(G['generator'..i].output)
+     local dbodyout = discriminator_body:forward(fake_input)
 
-  local dheadout = discriminator_head:forward(dbodyout)
-  disc_target:fill(0)
-  loss_fake = disc_head_criterion:forward(dheadout, disc_target)
-  local dloss_ddheadout = disc_head_criterion:backward(dheadout, disc_target)
-  local dloss_ddheadin = discriminator_head:backward(dbodyout, dloss_ddheadout)
-  discriminator_body:backward(fake_input, dloss_ddheadin)
+     local dheadout = discriminator_head:forward(dbodyout)
+     disc_target:fill(fake_labels[i])
+     loss_fake =loss_fake+ disc_head_criterion:forward(dheadout, disc_target)
+     local dloss_ddheadout = disc_head_criterion:backward(dheadout, disc_target)
+     local dloss_ddheadin = discriminator_head:backward(dbodyout, dloss_ddheadout)
+     discriminator_body:backward(fake_input, dloss_ddheadin)
 
-  local iheadout = info_head:forward(dbodyout)
-  local info_target = gen_input:narrow(2, 1, n_salient_vars)
-  loss_info = info_head_criterion:forward(iheadout, info_target) * info_regularisation_coefficient
-  assert(loss_info == loss_info, 'info loss is nan')
-  local dloss_diheadout = info_head_criterion:backward(iheadout, info_target)
-  dloss_diheadout:mul(info_regularisation_coefficient)
-  local dloss_diheadin = info_head:backward(dbodyout, dloss_diheadout)
-  discriminator_body:backward(fake_input, dloss_diheadin)
-
+     local iheadout = info_head:forward(dbodyout)
+     local info_target = gen_input:narrow(2, 1, n_salient_vars)
+     loss_info = loss_info+info_head_criterion:forward(iheadout, info_target) * info_regularisation_coefficient
+     assert(loss_info == loss_info, 'info loss is nan')
+     local dloss_diheadout = info_head_criterion:backward(iheadout, info_target)
+     dloss_diheadout:mul(info_regularisation_coefficient)
+     local dloss_diheadin = info_head:backward(dbodyout, dloss_diheadout)
+     discriminator_body:backward(fake_input, dloss_diheadin)
+  end
   -- Update average value meters
   real_loss_meter:add(loss_real)
   fake_loss_meter:add(loss_fake)
@@ -203,17 +215,29 @@ local do_generator_step = function(new_params)
   end
 
   gen_grad_params:zero()
+  for i=1,ngen do   
+     fake_input:resizeAs(G['generator'..i].output):copy(G['generator'..i].output)
+     local dbodyout = discriminator_body:forward(fake_input)
 
-  disc_target:fill(1)
-  local dheadout = discriminator_head.output
-  local dbodyout = discriminator_body.output
-  local gen_loss = disc_head_criterion:forward(dheadout, disc_target)
-  local dloss_ddheadout = disc_head_criterion:backward(dheadout, disc_target)
-  local dloss_ddheadin = discriminator_head:updateGradInput(dbodyout, dloss_ddheadout)
-  local dloss_dgout = discriminator_body:updateGradInput(fake_input, dloss_ddheadin + info_head.gradInput)
+     local dheadout = discriminator_head:forward(dbodyout)
+
+     disc_target:fill(real_label)
+     local dheadout = discriminator_head.output
+     local dbodyout = discriminator_body.output
+     local gen_loss = gen_loss+disc_head_criterion:forward(dheadout, disc_target)
+     local dloss_ddheadout = disc_head_criterion:backward(dheadout, disc_target)
+     local dloss_ddheadin = discriminator_head:updateGradInput(dbodyout, dloss_ddheadout)
+   
+     local iheadout = info_head:forward(dbodyout)
+     local info_target = gen_input:narrow(2, 1, n_salient_vars)
+     local dloss_diheadout = info_head_criterion:updateGradInput(iheadout, info_target)
+     dloss_diheadout:mul(info_regularisation_coefficient)
+     local dloss_diheadin = info_head:updateGradInput(dbodyout, dloss_diheadout)
+     local dloss_dgout = discriminator_body:updateGradInput(fake_input, dloss_ddheadin + dloss_diheadin)
+     G['generator'..i]:backward(gen_input, dloss_dgout)
+  end
   gen_loss_meter:add(gen_loss)
 
-  generator:backward(gen_input, dloss_dgout)
 
   return gen_loss, gen_grad_params
 end
@@ -304,34 +328,46 @@ for epoch = 1, n_epochs do
   gen_input:resize(50, n_gen_inputs)
   local gen_input_view = gen_input:view(5, 10, n_gen_inputs)
 
-  generator:evaluate()
-  for col = 1, 10 do
-    local col_tensor = gen_input_view:select(2, col)
-    col_tensor:copy(constant_noise)
+  for i=1,ngen do
+    G['generator'..i]:evaluate()
+    for col = 1, 10 do
+      local col_tensor = gen_input_view:select(2, col)
+      col_tensor:copy(constant_noise)
 
-    local category = col
-    for row = 1, rows do
-      -- Vary c1 across columns
-      col_tensor[{row, {1, 10}}]:zero()
-      col_tensor[{row, category}] = 1
+      local category = col
+      for row = 1, rows do
+        -- Vary c1 across columns
+        col_tensor[{row, {1, 10}}]:zero()
+        col_tensor[{row, category}] = 1
+      end
     end
-  end
-  local images_varying_c1 = tile_images(generator:forward(gen_input):float(), 5, 10)
+    local images_varying_c1 = tile_images(G['generator'..i]:forward(gen_input):float(), 5, 10)
 
-  for col = 1, 10 do
-    local col_tensor = gen_input_view:select(2, col)
-    col_tensor:copy(constant_noise)
+    for col = 1, 10 do
+      local col_tensor = gen_input_view:select(2, col)
+      col_tensor:copy(constant_noise)
 
-    for row = 1, rows do
-      -- Use different c1 for each row
-      col_tensor[{row, {1, 10}}]:zero()
-      col_tensor[{row, row}] = 1
-      -- Vary c2 from -2 to 2 across columns
-      col_tensor[{row, {11, 11}}]:fill((col - 5.5) / 2.25)
+      for row = 1, rows do
+        -- Use different c1 for each row
+        col_tensor[{row, {1, 10}}]:zero()
+        col_tensor[{row, row}] = 1
+        -- Vary c2 from -2 to 2 across columns
+        col_tensor[{row, {11, 11}}]:fill((col - 5.5) / 2.25)
+      end
     end
+    local images_varying_c2 = tile_images(G['generator'..i]:forward(gen_input):float(), 5, 10)
+    local image_dir = pl.path.join('out', 'images')
+    pl.dir.makepath(image_dir)
+
+    image.save(
+      pl.path.join(image_dir, string.format('varying_%04dc1_%04d.png',i, epoch)),
+      images_varying_c1)
+
+    image.save(
+    pl.path.join(image_dir, string.format('varying_%04dc2_%04d.png',i, epoch)),
+    images_varying_c2)
   end
-  local images_varying_c2 = tile_images(generator:forward(gen_input):float(), 5, 10)
-  generator:training()
+  G['generator'..i]:training()
 
   -- Update log
   log:set{
@@ -353,20 +389,10 @@ for epoch = 1, n_epochs do
   local model_disc_file = pl.path.join(model_dir, 'infogan_mnist_disc.t7')
   torch.save(model_disc_file, discriminator)
 
-  generator:clearState()
+  --generator:clearState()
   local model_gen_file = pl.path.join(model_dir, 'infogan_mnist_gen.t7')
-  torch.save(model_gen_file, generator)
+  torch.save(model_gen_file, {G=G})
 
-  local image_dir = pl.path.join('out', 'images')
-  pl.dir.makepath(image_dir)
-
-  image.save(
-    pl.path.join(image_dir, string.format('varying_c1_%04d.png', epoch)),
-    images_varying_c1)
-
-  image.save(
-    pl.path.join(image_dir, string.format('varying_c2_%04d.png', epoch)),
-    images_varying_c2)
 
   -- Checkpoint the networks every 10 epochs
   if epoch % 10 == 0 then
