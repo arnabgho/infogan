@@ -30,14 +30,14 @@ unpack=unpack or table.unpack
 
 local opts = pl.lapp [[
 Trains an InfoGAN network
-  --epochs (default 50) Number of training epochs
-  --updates-per-epoch (default 100) Number of batches per epoch
+  --epochs (default 100) Number of training epochs
+  --updates-per-epoch (default 1000) Number of batches per epoch
   --batch-size (default 128) Number of examples per batch
   --disc-learning-rate (default 2e-4) Discriminator network learning rate
-  --gen-learning-rate (default 1e-3) Generator network learning rate
+  --gen-learning-rate (default 2e-4) Generator network learning rate
   --info-reg-coeff (default 1.0) "lambda" from the InfoGAN paper
   --rng-seed (default 1234) Seed for random number generation
-  --gen-inputs (default 74) Number of inputs to the generator network
+  --gen-inputs (default 100) Number of inputs to the generator network
   --uniform-salient-vars (default 2) Number of non-categorical salient inputs
   --ngen (default 3) Number of generators to use
   --ndf (default 64) Number of discriminator filters
@@ -48,8 +48,12 @@ Trains an InfoGAN network
   --nThreads (default 4) The number of dataloading threads to use
   --dataset (default 'folder') The type of dataset to use
   --DATA_ROOT (default 'celebA') The dataset to be used
+  --exp-name (default 'dcgan') The experiment name
+  --n-sets-categorical (default 1) The sets of categorical variables
+  --gpu (default 1) Which GPU to use
 ]]
-
+print(opts)
+cutorch.setDevice(opts.gpu)
 local n_epochs = opts.epochs
 local n_updates_per_epoch = opts.updates_per_epoch
 local batch_size = opts.batch_size
@@ -58,9 +62,11 @@ local disc_learning_rate = opts.disc_learning_rate
 local gen_learning_rate = opts.gen_learning_rate
 local rng_seed = opts.rng_seed
 local n_gen_inputs = opts.gen_inputs
-local n_salient_vars = 10 + opts.uniform_salient_vars
+local n_sets_categorical=opts.n_sets_categorical
+local n_salient_vars = 10*n_sets_categorical + opts.uniform_salient_vars
 local ngen = opts.ngen
 local n_noise_vars = n_gen_inputs - n_salient_vars
+local exp_name=opts.exp_name
 opts.manualSeed = torch.random(1, 10000) -- fix seed
 print("Random Seed: " .. opts.manualSeed)
 torch.manualSeed(opts.manualSeed)
@@ -76,6 +82,16 @@ assert(n_salient_vars >= 10 and n_salient_vars < n_gen_inputs,
   'At least one generator input must be non-salient noise')
 
 --- INIT ---
+local function weights_init(m)
+   local name = torch.type(m)
+   if name:find('Convolution') then
+      m.weight:normal(0.0, 0.02)
+      m:noBias()
+   elseif name:find('BatchNormalization') then
+      if m.weight then m.weight:normal(1.0, 0.02) end
+      if m.bias then m.bias:fill(0) end
+   end
+end
 
 -- Set manual seeds for reproducible RNG
 torch.manualSeed(rng_seed)
@@ -92,11 +108,14 @@ torch.setdefaulttensortype('torch.FloatTensor')
 --- MODEL ---
 
 local dist = pdist.Hybrid()
-  :add(pdist.Categorical{n = 10, probs = torch.CudaTensor(10):fill(1 / 10)})
-  :add(pdist.Gaussian{
-    n = n_salient_vars - 10,
-    mean = torch.CudaTensor(n_salient_vars - 10):fill(0),
-    stddev = torch.CudaTensor(n_salient_vars - 10):fill(1),
+for i=1,n_sets_categorical do
+  dist:add(pdist.Categorical{n = 10, probs = torch.CudaTensor(10):fill(1 / 10)})
+--  :add(pdist.Categorical{n = 10, probs = torch.CudaTensor(10):fill(1 / 10)})
+end  
+  dist:add(pdist.Gaussian{
+    n = n_salient_vars - 10*n_sets_categorical,
+    mean = torch.CudaTensor(n_salient_vars - 10*n_sets_categorical):fill(0),
+    stddev = torch.CudaTensor(n_salient_vars - 10*n_sets_categorical):fill(1),
     fixed_stddev = true
   })
 local discriminator_body=nil
@@ -112,9 +131,10 @@ local discriminator = nn.Sequential()
     :add(discriminator_head)
     :add(info_head)
   )
-
+discriminator:apply(weights_init)
 for i=2,ngen do
     G['generator'..i]=G.generator1:clone()
+    G['generator'..i]:apply(weights_init)
 end
 
 --generator:cuda()
@@ -379,7 +399,7 @@ for epoch = 1, n_epochs do
       end
     end
     local images_varying_c2 = tile_images(G['generator'..i]:forward(gen_input):float(), 5, 10)
-    local image_dir = pl.path.join('out', 'images')
+    local image_dir = pl.path.join('out', exp_name ,'images')
     pl.dir.makepath(image_dir)
 
     image.save(
