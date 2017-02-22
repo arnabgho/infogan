@@ -426,23 +426,23 @@ for epoch = 1, n_epochs do
 
   -- Save outputs
 
-  local model_dir = pl.path.join('out', 'models')
+  local model_dir = pl.path.join('out',exp_name, 'models')
   pl.dir.makepath(model_dir)
 
   discriminator:clearState()
-  local model_disc_file = pl.path.join(model_dir, 'infogan_mnist_disc.t7')
+  local model_disc_file = pl.path.join(model_dir, 'infogan_disc.t7')
   torch.save(model_disc_file, discriminator)
 
   --generator:clearState()
-  local model_gen_file = pl.path.join(model_dir, 'infogan_mnist_gen.t7')
+  local model_gen_file = pl.path.join(model_dir, 'infogan_gen.t7')
   torch.save(model_gen_file, {G=G})
 
 
   -- Checkpoint the networks every 10 epochs
   if epoch % 10 == 0 then
     pl.file.copy(model_disc_file,
-      pl.path.join(model_dir, string.format('infogan_mnist_disc_%04d.t7', epoch)))
+      pl.path.join(model_dir, string.format('infogan_disc_%04d.t7', epoch)))
     pl.file.copy(model_gen_file,
-      pl.path.join(model_dir, string.format('infogan_mnist_gen_%04d.t7', epoch)))
+      pl.path.join(model_dir, string.format('infogan_gen_%04d.t7', epoch)))
   end
 end
