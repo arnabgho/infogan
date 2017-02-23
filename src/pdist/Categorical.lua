@@ -74,6 +74,9 @@ Categorical.sample = argcheck{
     for i = 1, dest:size(1) do
       local indices = torch.multinomial(probs[i], 1, true):view(-1, 1)
       --dest:narrow(1, i, 1):scatter(2, indices, 1)
+      if indices[1][1]<=0 or indices[1][1]>dest:size(2) then
+          indices[1][1]=torch.random(1,dest:size(2))
+      end
       dest[i][indices[1][1]]=1
     end
 
