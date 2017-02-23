@@ -77,7 +77,8 @@ Gaussian.sample = argcheck{
 
     for i = 1, dest:size(1) do
       for j = 1, dest:size(2) do
-        dest:narrow(1, i, 1):narrow(2, j, 1):normal(mean[{i, j}], stddev[{i, j}])
+        --dest:narrow(1, i, 1):narrow(2, j, 1):normal(mean[{i, j}], stddev[{i, j}])
+        dest[i][j]=torch.normal(mean[i][j],stddev[i][j])
       end
     end
 
