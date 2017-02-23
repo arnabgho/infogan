@@ -51,6 +51,8 @@ Trains an InfoGAN network
   --exp-name (default 'dcgan') The experiment name
   --n-sets-categorical (default 1) The sets of categorical variables
   --gpu (default 1) Which GPU to use
+  --continue-train (default true)
+  --start-epoch (default 1)
 ]]
 print(opts)
 cutorch.setDevice(opts.gpu)
@@ -141,6 +143,17 @@ end
 for k,net in pairs(G) do net:cuda() end
 discriminator:cuda()
 
+local model_dir = pl.path.join('out',exp_name, 'models')
+pl.dir.makepath(model_dir)
+
+local model_disc_file = pl.path.join(model_dir, 'infogan_disc.t7')
+
+local model_gen_file = pl.path.join(model_dir, 'infogan_gen.t7')
+
+if opts.continue_train==1 then
+    discriminator=torch.load(model_disc_file)
+    G=torch.load(model_gen_file).G
+end
 --- CRITERIA ---
 
 --local disc_head_criterion = nn.BCECriterion()
@@ -327,7 +340,7 @@ dist:sample(constant_noise:narrow(2, 1, n_salient_vars), dist.prior_params)
 --local iter_inst = train_iter()
 
 -- Training loop
-for epoch = 1, n_epochs do
+for epoch = opts.start_epoch, n_epochs do
   fake_loss_meter:reset()
   info_loss_meter:reset()
   real_loss_meter:reset()
