@@ -284,12 +284,12 @@ local do_generator_step = function(new_params)
      local dloss_ddheadin = discriminator_head:updateGradInput(dbodyout, dloss_ddheadout)
    
      local iheadout = info_head:forward(dbodyout)
-     local info_target = gen_input:narrow(2, 1, n_salient_vars)
+     local info_target = gen_inputs[i]:narrow(2, 1, n_salient_vars)
      local dloss_diheadout = info_head_criterion:updateGradInput(iheadout, info_target)
      dloss_diheadout:mul(info_regularisation_coefficient)
      local dloss_diheadin = info_head:updateGradInput(dbodyout, dloss_diheadout)
      local dloss_dgout = discriminator_body:updateGradInput(fake_input, dloss_ddheadin + dloss_diheadin)
-     G['generator'..i]:backward(gen_input, dloss_dgout)
+     G['generator'..i]:backward(gen_inputs[i], dloss_dgout)
   end
   gen_loss_meter:add(gen_loss)
 
@@ -402,13 +402,13 @@ for epoch = opts.start_epoch, n_epochs do
     for col = 1, 10 do
       local col_tensor = gen_input_view:select(2, col)
       col_tensor:copy(constant_noise)
-
+      local category=col
       for row = 1, rows do
         -- Use different c1 for each row
-        col_tensor[{row, {1, 10}}]:zero()
-        col_tensor[{row, row}] = 1
+        col_tensor[{row, {11, 20}}]:zero()
+        col_tensor[{row, category+10}] = 1
         -- Vary c2 from -2 to 2 across columns
-        col_tensor[{row, {11, 11}}]:fill((col - 5.5) / 2.25)
+        --col_tensor[{row, {11, 11}}]:fill((col - 5.5) / 2.25)
       end
     end
     local images_varying_c2 = tile_images(G['generator'..i]:forward(gen_input):float(), 5, 10)
