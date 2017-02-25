@@ -24,7 +24,7 @@ util = paths.dofile('../util/util.lua')
 local model_utils = require 'util.model_utils'
 local pdist = require('pdist')
 local MnistDataset = require('MnistDataset')
-local model_builder = require('classifying_dcgan_model_builder')
+local model_builder = require('dcgan_model_builder')
 unpack=unpack or table.unpack
 --- OPTIONS ---
 
@@ -129,6 +129,7 @@ G={}
 G['generator1'],discriminator_body,discriminator_head,info_head =
   model_builder.build_infogan(n_gen_inputs, dist:n_params(),opts)
 G.relu=nn.ReLU()
+G.cosine=nn.CosineDistance()
 local discriminator = nn.Sequential()
   :add(discriminator_body)
   :add(nn.ConcatTable()
@@ -158,8 +159,8 @@ if opts.continue_train==1 then
 end
 --- CRITERIA ---
 
---local disc_head_criterion = nn.BCECriterion()
-local disc_head_criterion = nn.CrossEntropyCriterion()
+local disc_head_criterion = nn.BCECriterion()
+--local disc_head_criterion = nn.CrossEntropyCriterion()
 local info_head_criterion = pdist.MutualInformationCriterion(dist)
 local compete_criterion= nn.AbsCriterion()
 disc_head_criterion:cuda()
@@ -190,9 +191,9 @@ local real_input = torch.CudaTensor()
 local gen_input = torch.CudaTensor()
 local fake_input = torch.CudaTensor()
 local disc_target = torch.CudaTensor()
-local score_D_cache=torch.Tensor(ngen,opt.batchSize):cuda()
-local feature_cache=torch.Tensor(ngen,opt.batchSize,512*4*4 ):cuda()
-local sum_score_D=torch.Tensor(opt.batchSize):cuda()
+local score_D_cache=torch.Tensor(ngen,opts.batchSize):cuda()
+local feature_cache=torch.Tensor(ngen,opts.batchSize,512*4*4 ):cuda()
+local sum_score_D=torch.Tensor(opts.batchSize):cuda()
 -- Flatten network parameters
 local disc_params, disc_grad_params = discriminator:getParameters()
 local gen_params, gen_grad_params = model_utils.combine_all_parameters(G)
@@ -204,8 +205,8 @@ local real_loss_meter = tnt.AverageValueMeter()
 local gen_loss_meter = tnt.AverageValueMeter()
 local time_meter = tnt.TimeMeter()
 
-local real_label=ngen+1
-local fake_labels = torch.linspace(1,ngen,ngen)
+local real_label=1
+local fake_label = 0
 -- Calculate outputs and gradients for the discriminator
 local do_discriminator_step = function(new_params)
   if new_params ~= disc_params then
@@ -240,11 +241,11 @@ local do_discriminator_step = function(new_params)
      gen_inputs[i]=gen_input
      fake_input:resizeAs(G['generator'..i].output):copy(G['generator'..i].output)
      local dbodyout = discriminator_body:forward(fake_input)
-     score_D_cache[i]=dbodyout
-     sum_score_D=sum_score_D + score_D_cache[i]
-     feature_cache[i]=discriminator.modules[11].output:reshape(opt.batchSize,512*4*4)
      local dheadout = discriminator_head:forward(dbodyout)
-     disc_target:fill(fake_labels[i])
+     score_D_cache[i]=dheadout
+     sum_score_D=sum_score_D + score_D_cache[i]
+     feature_cache[i]=dbodyout:reshape(opts.batchSize,512*4*4)
+     disc_target:fill(fake_label)
      loss_fake =loss_fake+ disc_head_criterion:forward(dheadout, disc_target)
      local dloss_ddheadout = disc_head_criterion:backward(dheadout, disc_target)
      local dloss_ddheadin = discriminator_head:backward(dbodyout, dloss_ddheadout)
@@ -301,9 +302,6 @@ local do_generator_step = function(new_params)
      local dheadout = discriminator_head.output
      local dbodyout = discriminator_body.output
      gen_loss = gen_loss+disc_head_criterion:forward(dheadout, disc_target)
-     local dloss_ddheadout = disc_head_criterion:backward(dheadout, disc_target)
-     local dloss_ddheadin = discriminator_head:updateGradInput(dbodyout, dloss_ddheadout)
-  
      local zero_batch=torch.Tensor(sum_score_D:size()):zero():cuda()
      local diff=ngen*score_D_cache[i]-sum_score_D-cosine_distance(feature_cache,i)
      diff=diff:cuda()
@@ -311,15 +309,19 @@ local do_generator_step = function(new_params)
      local relu_diff=G.relu:forward(diff)
      relu_diff=relu_diff:cuda()
     
-     gen_loss=gen_loss+compete_criterion:forward(relu_diff,zero_batch)
+     gen_loss=gen_loss+lambda_compete*compete_criterion:forward(relu_diff,zero_batch)
      local compete_df_do=G.relu:backward(diff,compete_criterion:backward(relu_diff,zero_batch)) 
-     compete_df_do=opt.lambda_compete*compete_df_do
+     compete_df_do=lambda_compete*compete_df_do
+
+     local dloss_ddheadout = disc_head_criterion:backward(dheadout, disc_target)
+     local dloss_ddheadin = discriminator_head:updateGradInput(dbodyout, dloss_ddheadout + compete_df_do)
+  
      local iheadout = info_head:forward(dbodyout)
      local info_target = gen_input:narrow(2, 1, n_salient_vars)
      local dloss_diheadout = info_head_criterion:updateGradInput(iheadout, info_target)
      dloss_diheadout:mul(info_regularisation_coefficient)
      local dloss_diheadin = info_head:updateGradInput(dbodyout, dloss_diheadout)
-     local dloss_dgout = discriminator_body:updateGradInput(fake_input, dloss_ddheadin + dloss_diheadin + compete_df_do )
+     local dloss_dgout = discriminator_body:updateGradInput(fake_input, dloss_ddheadin + dloss_diheadin  )
      G['generator'..i]:backward(gen_input, dloss_dgout)
   end
   gen_loss_meter:add(gen_loss)
