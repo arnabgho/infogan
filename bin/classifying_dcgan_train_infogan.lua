@@ -113,13 +113,15 @@ local dist = pdist.Hybrid()
 for i=1,n_sets_categorical do
   dist:add(pdist.Categorical{n = 10, probs = torch.CudaTensor(10):fill(1 / 10)})
 --  :add(pdist.Categorical{n = 10, probs = torch.CudaTensor(10):fill(1 / 10)})
-end  
+end 
+if opts.uniform_salient_vars ~=0 then
   dist:add(pdist.Gaussian{
     n = n_salient_vars - 10*n_sets_categorical,
     mean = torch.CudaTensor(n_salient_vars - 10*n_sets_categorical):fill(0),
     stddev = torch.CudaTensor(n_salient_vars - 10*n_sets_categorical):fill(1),
     fixed_stddev = true
   })
+end
 local discriminator_body=nil
 local discriminator_head=nil
 local info_head=nil
