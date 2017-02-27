@@ -337,7 +337,6 @@ end
 
 -- Constant noise for each row of the fake input visualisation
 local constant_noise = torch.CudaTensor(5, n_gen_inputs)
-dist:sample(constant_noise:narrow(2, 1, n_salient_vars), dist.prior_params)
 
 --local iter_inst = train_iter()
 
@@ -388,42 +387,44 @@ for epoch = opts.start_epoch, n_epochs do
 
   for i=1,ngen do
     G['generator'..i]:evaluate()
-    for col = 1, 10 do
-      local col_tensor = gen_input_view:select(2, col)
-      col_tensor:copy(constant_noise)
+    dist:sample(constant_noise:narrow(2, 1, n_salient_vars), dist.prior_params)
+    for k=1,opts.n_sets_categorical do
+     for col = 1, 10 do
+       local col_tensor = gen_input_view:select(2, col)
+       col_tensor:copy(constant_noise)
 
-      local category = col
-      for row = 1, rows do
-        -- Vary c1 across columns
-        col_tensor[{row, {1, 10}}]:zero()
-        col_tensor[{row, category}] = 1
-      end
-    end
-    local images_varying_c1 = tile_images(G['generator'..i]:forward(gen_input):float(), 5, 10)
-
-    for col = 1, 10 do
-      local col_tensor = gen_input_view:select(2, col)
-      col_tensor:copy(constant_noise)
-      local category=col
-      for row = 1, rows do
-        -- Use different c1 for each row
-        col_tensor[{row, {11, 20}}]:zero()
-        col_tensor[{row, category+10}] = 1
-        -- Vary c2 from -2 to 2 across columns
-        --col_tensor[{row, {11, 11}}]:fill((col - 5.5) / 2.25)
-      end
-    end
-    local images_varying_c2 = tile_images(G['generator'..i]:forward(gen_input):float(), 5, 10)
-    local image_dir = pl.path.join('out', exp_name ,'images')
-    pl.dir.makepath(image_dir)
-
-    image.save(
-      pl.path.join(image_dir, string.format('%01dvarying_dc1_%04d.png',i, epoch)),
-      images_varying_c1)
-
-    image.save(
-    pl.path.join(image_dir, string.format('%01dvarying_dc2_%04d.png',i, epoch)),
-    images_varying_c2)
+       local category = col
+       for row = 1, rows do
+         -- Vary c1 across columns
+         col_tensor[{row, {1+(k-1)*10, k*10}}]:zero()
+         col_tensor[{row, (k-1)*10+category}] = 1
+       end
+       local images_varying_c = tile_images(G['generator'..i]:forward(gen_input):float(), 5, 10)
+       local image_dir = pl.path.join('out', exp_name ,'images','dc'..k)
+       pl.dir.makepath(image_dir)
+ 
+       image.save(
+      pl.path.join(image_dir, string.format('%01dvarying_dc_%04d.png',i, epoch)),
+      images_varying_c)
+     end
+   end 
+   -- for col = 1, 10 do
+   --   local col_tensor = gen_input_view:select(2, col)
+   --   col_tensor:copy(constant_noise)
+   --   local category=col
+   --   for row = 1, rows do
+   --     -- Use different c1 for each row
+   --     col_tensor[{row, {11, 20}}]:zero()
+   --     col_tensor[{row, category+10}] = 1
+   --     -- Vary c2 from -2 to 2 across columns
+   --     --col_tensor[{row, {11, 11}}]:fill((col - 5.5) / 2.25)
+   --   end
+   -- end
+   -- local images_varying_c2 = tile_images(G['generator'..i]:forward(gen_input):float(), 5, 10)
+    
+   -- image.save(
+   -- pl.path.join(image_dir, string.format('%01dvarying_dc2_%04d.png',i, epoch)),
+   -- images_varying_c2)
   end
   for i=1,ngen do
     G['generator'..i]:training()
