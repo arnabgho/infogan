@@ -99,9 +99,11 @@ function model_builder.build_infogan(n_gen_inputs, n_salient_params,opt)
     netG:add(SpatialBatchNormalization(ngf * 2)):add(nn.ReLU(true))
     -- state size: (ngf*2) x 16 x 16
     netG:add(SpatialFullConvolution(ngf * 2, ngf, 4, 4, 2, 2, 1, 1))
-    netG:add(SpatialBatchNormalization(ngf)):add(nn.ReLU(true))
-    -- state size: (ngf) x 32 x 32
-    netG:add(SpatialFullConvolution(ngf, nc, 4, 4, 2, 2, 1, 1))
+    if opt.out_size==64 then
+         netG:add(SpatialBatchNormalization(ngf)):add(nn.ReLU(true))
+         -- state size: (ngf) x 32 x 32
+         netG:add(SpatialFullConvolution(ngf, nc, 4, 4, 2, 2, 1, 1))
+    end
     netG:add(nn.Tanh())
     -- state size: (nc) x 64 x 64
 
@@ -125,12 +127,18 @@ function model_builder.build_infogan(n_gen_inputs, n_salient_params,opt)
 
 
     local netD = nn.Sequential()
-    
-    -- input is (nc) x 64 x 64
-    netD:add(SpatialConvolution(nc, ndf, 4, 4, 2, 2, 1, 1))
-    netD:add(nn.LeakyReLU(0.2, true))
-    -- state size: (ndf) x 32 x 32
-    netD:add(SpatialConvolution(ndf, ndf * 2, 4, 4, 2, 2, 1, 1))
+    if opt.out_size==64 then 
+        -- input is (nc) x 64 x 64
+        netD:add(SpatialConvolution(nc, ndf, 4, 4, 2, 2, 1, 1))
+        netD:add(nn.LeakyReLU(0.2, true))
+        -- state size: (ndf) x 32 x 32
+        netD:add(SpatialConvolution(ndf, ndf * 2, 4, 4, 2, 2, 1, 1))
+    else if opt.out_size==32 then
+         --netD:add(SpatialConvolution(nc, ndf, 4, 4, 2, 2, 1, 1))
+         --netD:add(nn.LeakyReLU(0.2, true))
+         -- state size: (ndf) x 32 x 32
+         netD:add(SpatialConvolution(nc, ndf * 2, 4, 4, 2, 2, 1, 1))
+    end
     netD:add(SpatialBatchNormalization(ndf * 2)):add(nn.LeakyReLU(0.2, true))
     -- state size: (ndf*2) x 16 x 16
     netD:add(SpatialConvolution(ndf * 2, ndf * 4, 4, 4, 2, 2, 1, 1))

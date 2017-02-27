@@ -53,7 +53,8 @@ Trains an InfoGAN network
   --gpu (default 1) Which GPU to use
   --continue-train (default true)
   --start-epoch (default 1)
-  --lambda-compete (default 0.01) 
+  --lambda-compete (default 0.01)
+  --out-size (default 64)
 ]]
 print(opts)
 cutorch.setDevice(opts.gpu)
