@@ -70,6 +70,7 @@ local n_salient_vars = 10*n_sets_categorical + opts.uniform_salient_vars
 local ngen = opts.ngen
 local n_noise_vars = n_gen_inputs - n_salient_vars
 local exp_name=opts.exp_name
+local nc=3
 opts.manualSeed = torch.random(1, 10000) -- fix seed
 print("Random Seed: " .. opts.manualSeed)
 torch.manualSeed(opts.manualSeed)
@@ -126,9 +127,22 @@ end
 local discriminator_body=nil
 local discriminator_head=nil
 local info_head=nil
-G={}
-G,discriminator_body,discriminator_head,info_head =
+netG,discriminator_body,discriminator_head,info_head =
   model_builder.build_infogan_heads(n_gen_inputs, dist:n_params(),opts)
+G={}
+clones=model_utils.clone_many_times(netG,ngen)
+for i=1,ngen do
+    G['generator'..i]=nn.Sequential()
+    G['generator'..i]:add(clones[i])
+
+    G['generator'..i]:add(nn.SpatialFullConvolution(opts.ngf * 2, opts.ngf, 4, 4, 2, 2, 1, 1))
+    G['generator'..i]:add(nn.SpatialBatchNormalization(opts.ngf)):add(nn.ReLU(true))
+    -- state size: (ngf) x 32 x 32
+    G['generator'..i]:add(nn.SpatialFullConvolution(opts.ngf, nc, 4, 4, 2, 2, 1, 1))
+    G['generator'..i]:add(nn.Tanh())
+    -- state size: (nc) x 64 x 64
+end
+
 
 local discriminator = nn.Sequential()
   :add(discriminator_body)

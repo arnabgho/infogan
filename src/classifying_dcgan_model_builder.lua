@@ -217,22 +217,7 @@ function model_builder.build_infogan_heads(n_gen_inputs, n_salient_params,opt)
     netG:add(SpatialFullConvolution(ngf * 4, ngf * 2, 4, 4, 2, 2, 1, 1))
     netG:add(SpatialBatchNormalization(ngf * 2)):add(nn.ReLU(true))
     -- state size: (ngf*2) x 16 x 16
-    for i=1,opt.ngen do
-        G['generator'..i]=nn.Sequential()
-        if i==1 then 
-            G['generator'..i]:add(netG)
-        else
-            G['generator'..i]:add(netG:clone('weight','bias','gradWeight','gradBias'))
-        end
- 
-        G['generator'..i]:add(SpatialFullConvolution(ngf * 2, ngf, 4, 4, 2, 2, 1, 1))
-        G['generator'..i]:add(SpatialBatchNormalization(ngf)):add(nn.ReLU(true))
-        -- state size: (ngf) x 32 x 32
-        G['generator'..i]:add(SpatialFullConvolution(ngf, nc, 4, 4, 2, 2, 1, 1))
-        G['generator'..i]:add(nn.Tanh())
-        -- state size: (nc) x 64 x 64
-    end
---  local discriminator_body = Seq()
+    --  local discriminator_body = Seq()
 --    -- 1 x 28 x 28
 --    :add(Conv(1, 64, 4,4, 2,2, 1,1))
 --    :add(LeakyReLU())
@@ -299,7 +284,7 @@ function model_builder.build_infogan_heads(n_gen_inputs, n_salient_params,opt)
     info_head:add(nn.Linear(128,n_salient_params))
 
 
-  return G, netD, discriminator_head, info_head
+  return netG, netD, discriminator_head, info_head
 end
 
 return model_builder
