@@ -127,21 +127,22 @@ end
 local discriminator_body=nil
 local discriminator_head=nil
 local info_head=nil
-netG,discriminator_body,discriminator_head,info_head =
-  model_builder.build_infogan_heads(n_gen_inputs, dist:n_params(),opts)
 G={}
-clones=model_utils.clone_many_times(netG,ngen)
-for i=1,ngen do
-    G['generator'..i]=nn.Sequential()
-    G['generator'..i]:add(clones[i])
-
-    G['generator'..i]:add(nn.SpatialFullConvolution(opts.ngf * 2, opts.ngf, 4, 4, 2, 2, 1, 1))
-    G['generator'..i]:add(nn.SpatialBatchNormalization(opts.ngf)):add(nn.ReLU(true))
-    -- state size: (ngf) x 32 x 32
-    G['generator'..i]:add(nn.SpatialFullConvolution(opts.ngf, nc, 4, 4, 2, 2, 1, 1))
-    G['generator'..i]:add(nn.Tanh())
-    -- state size: (nc) x 64 x 64
-end
+G,discriminator_body,discriminator_head,info_head =
+  model_builder.build_infogan_heads(n_gen_inputs, dist:n_params(),opts)
+--G={}
+--clones=model_utils.clone_many_times(netG,ngen)
+--for i=1,ngen do
+--    G['generator'..i]=nn.Sequential()
+--    G['generator'..i]:add(clones[i])
+--
+--    G['generator'..i]:add(nn.SpatialFullConvolution(opts.ngf * 2, opts.ngf, 4, 4, 2, 2, 1, 1))
+--    G['generator'..i]:add(nn.SpatialBatchNormalization(opts.ngf)):add(nn.ReLU(true))
+--    -- state size: (ngf) x 32 x 32
+--    G['generator'..i]:add(nn.SpatialFullConvolution(opts.ngf, nc, 4, 4, 2, 2, 1, 1))
+--    G['generator'..i]:add(nn.Tanh())
+--    -- state size: (nc) x 64 x 64
+--end
 
 
 local discriminator = nn.Sequential()
@@ -157,8 +158,10 @@ discriminator:apply(weights_init)
 --end
 
 --generator:cuda()
-for k,net in pairs(G) do net:cuda() end
 discriminator:cuda()
+for k,net in pairs(G) do
+    net:cuda() 
+end
 
 local model_dir = pl.path.join('out',exp_name, 'models')
 pl.dir.makepath(model_dir)
