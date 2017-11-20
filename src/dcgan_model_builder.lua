@@ -176,7 +176,6 @@ function model_builder.build_infogan(n_gen_inputs, n_salient_params,opt)
     -- 128
     info_head:add(nn.Linear(128,n_salient_params))
 
-
   return netG, netD, discriminator_head, info_head
 end
 

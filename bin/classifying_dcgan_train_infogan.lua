@@ -129,7 +129,7 @@ local info_head=nil
 G={}
 G['generator1'],discriminator_body,discriminator_head,info_head =
   model_builder.build_infogan(n_gen_inputs, dist:n_params(),opts)
-
+print(G['generator1'])
 local discriminator = nn.Sequential()
   :add(discriminator_body)
   :add(nn.ConcatTable()

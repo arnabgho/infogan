@@ -86,6 +86,7 @@ function model_builder.build_infogan(n_gen_inputs, n_salient_params,opt)
     local nz=n_gen_inputs
     local ndf=opt.ndf
     local ngf=opt.ngf
+    local ngen = opt.ngen
     local netG = nn.Sequential()
     netG:add(nn.Reshape(nz,1,1))
     -- input is Z, going into a convolution
@@ -172,7 +173,7 @@ function model_builder.build_infogan(n_gen_inputs, n_salient_params,opt)
     info_head:add(nn.Linear(128,n_salient_params))
 
 
-  return G, netD, discriminator_head, info_head
+  return netG, netD, discriminator_head, info_head
 end
 
 function model_builder.build_infogan_heads(n_gen_inputs, n_salient_params,opt)
