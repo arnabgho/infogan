@@ -30,8 +30,8 @@ unpack=unpack or table.unpack
 
 local opts = pl.lapp [[
 Trains an InfoGAN network
-  --epochs (default 100) Number of training epochs
-  --updates-per-epoch (default 1000) Number of batches per epoch
+  --epochs (default 1000) Number of training epochs
+  --updates-per-epoch (default 100) Number of batches per epoch
   --batch-size (default 128) Number of examples per batch
   --disc-learning-rate (default 2e-4) Discriminator network learning rate
   --gen-learning-rate (default 2e-4) Generator network learning rate
@@ -49,7 +49,7 @@ Trains an InfoGAN network
   --dataset (default 'folder') The type of dataset to use
   --DATA_ROOT (default 'celebA') The dataset to be used
   --exp-name (default 'dcgan') The experiment name
-  --n-sets-categorical (default 1) The sets of categorical variables
+  --n-sets-categorical (default 3) The sets of categorical variables
   --gpu (default 1) Which GPU to use
   --continue-train (default true)
   --start-epoch (default 1)
